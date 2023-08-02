@@ -13,16 +13,17 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/go-sql-driver/mysql"
-	"github.com/openfga/openfga/pkg/logger"
-	"github.com/openfga/openfga/pkg/storage"
-	"github.com/openfga/openfga/pkg/storage/sqlcommon"
-	tupleUtils "github.com/openfga/openfga/pkg/tuple"
-	"github.com/openfga/openfga/pkg/typesystem"
 	openfgapb "go.buf.build/openfga/go/openfga/api/openfga/v1"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/openfga/openfga/pkg/logger"
+	"github.com/openfga/openfga/pkg/storage"
+	"github.com/openfga/openfga/pkg/storage/sqlcommon"
+	tupleUtils "github.com/openfga/openfga/pkg/tuple"
+	"github.com/openfga/openfga/pkg/typesystem"
 )
 
 var tracer = otel.Tracer("openfga/pkg/storage/mysql")
@@ -37,25 +38,31 @@ type MySQL struct {
 
 var _ storage.OpenFGADatastore = (*MySQL)(nil)
 
-func New(uri string, cfg *sqlcommon.Config) (*MySQL, error) {
+func New(uriStr string, cfg *sqlcommon.Config) (*MySQL, error) {
+	dsnCfg, err := mysql.ParseDSN(uriStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse mysql connection dsn: %w", err)
+	}
 
 	if cfg.Username != "" || cfg.Password != "" {
-		dsnCfg, err := mysql.ParseDSN(uri)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse mysql connection dsn: %w", err)
-		}
-
 		if cfg.Username != "" {
 			dsnCfg.User = cfg.Username
 		}
 		if cfg.Password != "" {
 			dsnCfg.Passwd = cfg.Password
 		}
-
-		uri = dsnCfg.FormatDSN()
 	}
 
-	db, err := sql.Open("mysql", uri)
+	var db *sql.DB
+	switch cfg.AuthMethod {
+	case "aws_rds_iam":
+		db, err = openRDS(dsnCfg, cfg)
+	case "":
+		db, err = sql.Open("mysql", dsnCfg.FormatDSN())
+	default:
+		return nil, fmt.Errorf("unsupported cloud auth: %s", cfg.AuthMethod)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize mysql connection: %w", err)
 	}

@@ -13,16 +13,18 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/go-sql-driver/mysql"
 	"github.com/oklog/ulid/v2"
+	openfgapb "go.buf.build/openfga/go/openfga/api/openfga/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/openfga/openfga/pkg/logger"
 	"github.com/openfga/openfga/pkg/storage"
 	tupleUtils "github.com/openfga/openfga/pkg/tuple"
-	openfgapb "go.buf.build/openfga/go/openfga/api/openfga/v1"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Config struct {
 	Username               string
 	Password               string
+	AuthMethod             string // one of "aws_rds_iam"
 	Logger                 logger.Logger
 	MaxTuplesPerWriteField int
 	MaxTypesPerModelField  int

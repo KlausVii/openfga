@@ -14,16 +14,17 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/cenkalti/backoff/v4"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/openfga/openfga/pkg/logger"
-	"github.com/openfga/openfga/pkg/storage"
-	"github.com/openfga/openfga/pkg/storage/sqlcommon"
-	tupleUtils "github.com/openfga/openfga/pkg/tuple"
-	"github.com/openfga/openfga/pkg/typesystem"
 	openfgapb "go.buf.build/openfga/go/openfga/api/openfga/v1"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/openfga/openfga/pkg/logger"
+	"github.com/openfga/openfga/pkg/storage"
+	"github.com/openfga/openfga/pkg/storage/sqlcommon"
+	tupleUtils "github.com/openfga/openfga/pkg/tuple"
+	"github.com/openfga/openfga/pkg/typesystem"
 )
 
 var tracer = otel.Tracer("openfga/pkg/storage/postgres")
@@ -38,37 +39,43 @@ type Postgres struct {
 
 var _ storage.OpenFGADatastore = (*Postgres)(nil)
 
-func New(uri string, cfg *sqlcommon.Config) (*Postgres, error) {
+func New(uriStr string, cfg *sqlcommon.Config) (*Postgres, error) {
+	uri, err := url.Parse(uriStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse postgres connection uri: %w", err)
+	}
 
 	if cfg.Username != "" || cfg.Password != "" {
-		parsed, err := url.Parse(uri)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse postgres connection uri: %w", err)
-		}
-
 		username := ""
 		if cfg.Username != "" {
 			username = cfg.Username
-		} else if parsed.User != nil {
-			username = parsed.User.Username()
+		} else if uri.User != nil {
+			username = uri.User.Username()
 		}
 
 		if cfg.Password != "" {
-			parsed.User = url.UserPassword(username, cfg.Password)
-		} else if parsed.User != nil {
-			if password, ok := parsed.User.Password(); ok {
-				parsed.User = url.UserPassword(username, password)
+			uri.User = url.UserPassword(username, cfg.Password)
+		} else if uri.User != nil {
+			if password, ok := uri.User.Password(); ok {
+				uri.User = url.UserPassword(username, password)
 			} else {
-				parsed.User = url.User(username)
+				uri.User = url.User(username)
 			}
 		} else {
-			parsed.User = url.User(username)
+			uri.User = url.User(username)
 		}
-
-		uri = parsed.String()
 	}
 
-	db, err := sql.Open("pgx", uri)
+	var db *sql.DB
+	switch cfg.AuthMethod {
+	case "aws_rds_iam":
+		db, err = openRDS(uri, cfg)
+	case "":
+		db, err = sql.Open("pgx", uri.String())
+	default:
+		return nil, fmt.Errorf("unsupported auth_method: %s", cfg.AuthMethod)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize postgres connection: %w", err)
 	}

@@ -49,13 +49,13 @@ type Datastore struct {
 var _ storage.OpenFGADatastore = (*Datastore)(nil)
 
 // New creates a new [Datastore] storage.
-func New(uri string, cfg *sqlcommon.Config) (*Datastore, error) {
-	if cfg.Username != "" || cfg.Password != "" {
-		dsnCfg, err := mysql.ParseDSN(uri)
-		if err != nil {
-			return nil, fmt.Errorf("parse mysql connection dsn: %w", err)
-		}
+func New(uriStr string, cfg *sqlcommon.Config) (*Datastore, error) {
+	dsnCfg, err := mysql.ParseDSN(uriStr)
+	if err != nil {
+		return nil, fmt.Errorf(" parse mysql connection dsn: %w", err)
+	}
 
+	if cfg.Username != "" || cfg.Password != "" {
 		if cfg.Username != "" {
 			dsnCfg.User = cfg.Username
 		}
@@ -65,8 +65,15 @@ func New(uri string, cfg *sqlcommon.Config) (*Datastore, error) {
 		dsnCfg.AllowNativePasswords = true
 		uri = dsnCfg.FormatDSN()
 	}
-
-	db, err := sql.Open("mysql", uri)
+	var db *sql.DB
+	switch cfg.AuthMethod {
+	case "aws_rds_iam":
+		db, err = openRDS(dsnCfg, cfg)
+	case "":
+		db, err = sql.Open("mysql", uri)
+	default:
+		return nil, fmt.Errorf("unsupported cloud auth: %s", cfg.AuthMethod)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("initialize mysql connection: %w", err)
 	}

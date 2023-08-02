@@ -29,6 +29,7 @@ import (
 type Config struct {
 	Username               string
 	Password               string
+	AuthMethod             string // one of "aws_rds_iam"
 	Logger                 logger.Logger
 	MaxTuplesPerWriteField int
 	MaxTypesPerModelField  int

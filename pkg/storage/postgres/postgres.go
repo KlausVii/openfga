@@ -50,7 +50,7 @@ type Datastore struct {
 var _ storage.OpenFGADatastore = (*Datastore)(nil)
 
 // New creates a new [Datastore] storage.
-func New(uri string, cfg *sqlcommon.Config) (*Datastore, error) {
+func New(uriStr string, cfg *sqlcommon.Config) (*Datastore, error) {
 	if cfg.Username != "" || cfg.Password != "" {
 		parsed, err := url.Parse(uri)
 		if err != nil {
@@ -80,10 +80,16 @@ func New(uri string, cfg *sqlcommon.Config) (*Datastore, error) {
 		uri = parsed.String()
 	}
 
-	db, err := sql.Open("pgx", uri)
-	if err != nil {
-		return nil, fmt.Errorf("initialize postgres connection: %w", err)
+	var db *sql.DB
+	switch cfg.AuthMethod {
+	case "aws_rds_iam":
+		db, err = openRDS(uri, cfg)
+	case "":
+		db, err = sql.Open("pgx", uri.String())
+	default:
+		return nil, fmt.Errorf("unsupported auth_method: %s", cfg.AuthMethod)
 	}
+
 	return NewWithDB(db, cfg)
 }
 

@@ -17,13 +17,17 @@ import (
 	"github.com/openfga/openfga/pkg/storage/sqlcommon"
 )
 
-func openRDS(uri *url.URL, cfg *sqlcommon.Config) (*sql.DB, error) {
+func openRDS(uri string, cfg *sqlcommon.Config) (*sql.DB, error) {
 	ctx := context.Background()
-	iam, err := newIAM(ctx, cfg.Username, uri.Hostname(), uri.Port())
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		return nil, fmt.Errorf("parse postgres connection uri: %w", err)
+	}
+	iam, err := newIAM(ctx, cfg.Username, parsed.Hostname(), parsed.Port())
 	if err != nil {
 		return nil, err
 	}
-	conf, err := pgx.ParseConfig(uri.String())
+	conf, err := pgx.ParseConfig(parsed.String())
 	if err != nil {
 		return nil, err
 	}
